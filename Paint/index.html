@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Paint!</title>
+        <script id="2dVertexShader" type="notjs">
+            // attribute used for reading buffers
+		    attribute vec4 a_position;	
+
+		    //We now want to read in Colors
+		    attribute vec3 a_color;
+
+		    //However, we want to send the color to
+		    //The fragment Shader
+		    varying vec3 fragColor;
+		    void main()
+		    {
+		    	fragColor = a_color;
+
+		    	// Will always be of type vec4
+		    	gl_Position=a_position;
+		    }		
+        </script>
+
+        <script id="2dFragmentShader" type="notjs">
+            //Fragment shaders do not have precision so we have to set it.
+		    precision mediump float;
+
+		    // Same varying from the vertex shader
+		    varying vec3 fragColor;
+		    void main()
+		    {
+		    	//gl_FragColor = vec4(0,0,1,1); //Between 0 and 1.
+            
+		    	// Need to also pass the alpha channel (1)
+		    	gl_FragColor = vec4(fragColor,1);
+		    }
+        </script>
+
+        <script>
+            // Add something here to connect everything together
+			class WebGL_Interface
+			{
+				constructor()
+				{
+					// We set out canvas size earlier, now its time to set our gl viewport
+					// aka our clip space (-1 to 1) inside our canvas
+					//setup viewport, we want to draw on the same size as the canvas
+					gl.viewport(0,0, gl.canvas.width, gl.canvas.height);
+					//set clear colors this sets our background
+					gl.clearColor(1,1,1,1); 
+					gl.clear(gl.COLOR_BUFFER_BIT);
+					//values are between 0 and 1 for black and white
+
+
+					// We first make sure to grab a reference to the shader source code
+					var vertexShaderSource = document.getElementById("2dVertexShader").text;
+					var fragmentShaderSource = document.getElementById("2dFragmentShader").text;
+
+					
+					// grabbing our compiled shaders through the createShader function
+					var vertexShader = this.createShader(gl.VERTEX_SHADER, vertexShaderSource);
+					var fragmentShader = this.createShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+					
+					// With the two shaders now compiled we can now link them together into a
+					// program
+					this.program = this.createProgram(vertexShader, fragmentShader);
+
+					
+					// Anything before the useProgram function is considered to be initiallization
+					// code. Most of webgl is setting up shop/state. 
+					gl.useProgram(this.program);
+			
+				}
+				createShader(type,source)
+				{
+					// type = shader variable (e.g. vertexShader or fragmentShader)
+					// source = text/source code (e.g. vertexShaderSource)
+
+					// Here we are creating the shader variable with appropriate type and
+					// connecting the source code to it
+					var shader = gl.createShader(type);
+					gl.shaderSource(shader,source);
+
+					// After linking our shader and source together, we can then compile them
+					// Similar process to the C/C++ compile process
+					gl.compileShader(shader);
+
+					// Always make sure to do some error checking
+					var success = gl.getShaderParameter(shader,gl.COMPILE_STATUS);
+					if(success){
+						// If everything goes well, return the compiled shader so that it can be
+						// linked later
+						return shader;
+					}
+					//else if didnt work
+					console.error(gl.getShaderInfoLog(shader));
+					gl.deleteShader(shader);
+				}
+			
+				createProgram(vs,fs)
+				{
+					// vs = vertex shader; fs = fragment shader
+					// create the program variable
+					var program = gl.createProgram();
+					// attaching both shaders to the program and linking them together 
+					gl.attachShader(program, vs);
+					gl.attachShader(program, fs);
+					gl.linkProgram(program);
+					
+					var success = gl.getProgramParameter(program,gl.LINK_STATUS);
+					if(success){
+						return program;
+					}
+					console.error(gl.getProgramInfoLog(program));
+					gl.deleteProgram(program);
+				}
+			}
+        </script>
+
+        <script>
+            class Shape
+            {
+                
+                constructor(name)
+                {
+                    // Each shape will have its own color, name, fill status, finished status,
+                    // vertex count, positions array and buffer.
+
+                    // Defaulted to red
+                    this.r = 1;
+                    this.g = 0;
+                    this.b = 0;
+
+                    // Each child instance will need to pass the name of the shape
+                    this.name = name;
+
+                    this.isFill = true;     // Default to fill 
+                    this.isFinished = false;    // Default to not being finished
+                    this.vertCount = 0;     // A shape starts with 0 verticies and an empty positions array
+
+                    this.positions = [];
+
+                    // Create and initially set up the buffer
+                    this.positionBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+
+                }
+
+                // Helper function for setting up and formating the attributes for each shape
+                setupRender(program)
+                {
+                    
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+                    var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+					var colorAttributeLocation = gl.getAttribLocation(program, "a_color");
+
+                    gl.enableVertexAttribArray(positionAttributeLocation);
+					gl.enableVertexAttribArray(colorAttributeLocation);
+					
+                    //now we have to specify how to read our vertcies 
+					var size = 3;	// each vertex has an x ,y ,z
+					var type = gl.FLOAT;	// the type is float
+					var normalize = false;	// dont normalize since the range is already in clipspace
+					var stride = 6 * Float32Array.BYTES_PER_ELEMENT;		// no stride since the vertex doesnt have multiple properties 
+					var offset = 0;		// start at the begining of the buffer
+					// Finally set our attribute
+					gl.vertexAttribPointer(positionAttributeLocation, size, type, normalize, stride, offset) //great quiz or text question
+					
+                    gl.vertexAttribPointer(
+						colorAttributeLocation,
+						3,
+						gl.FLOAT,
+						gl.FALSE,
+						6 * Float32Array.BYTES_PER_ELEMENT,	// Have to specify bytes. In this case a vertex is 5 wide (xy,rbg) float = 4 bytes
+						3 * Float32Array.BYTES_PER_ELEMENT
+					)
+                }   
+            }
+
+            class Triangle extends Shape
+            {
+                constructor()
+                {
+                    // Defining the name attribute
+                    super("Triangle");
+                }
+
+                addPoint(x,y)
+                {
+                    // x, y, z = 0, r, g, b
+					// pushing the coordinates obtained from the mouse click over to the 
+					// positions array. We also pass in some color values
+					this.positions.push(x, y, 0, this.r, this.g, this.b);
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+					
+					// Increase the vertCount since we just added a permanent point
+					this.vertCount++;
+
+					// we continuosly add verticies by clicking on the canvas and once we click
+					// in three spots positions will have three verticies in which it can now draw 
+					// a triangle! Ideally each shape child (rectangle, circle, triangle etc) will
+					// have its own unique render and addPoint functions.
+					if(this.vertCount == 3)
+					{
+                        // Once true, the shape will complete itself and the program naturally moves
+                        // to drawing the next selected shape if the user continues to click on the canvas
+						this.isFinished = true;
+					}
+                }
+
+                // Function behaves very similarly to addPoint() except that it does not increase the vertCount
+                // since the idea is to add a temporary point(s) that the user can drag around until confirmed
+                addTempPoint(x,y)
+                {
+                    
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+					//console.log(this.positions.length);
+					gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+					
+                }
+
+                // Clean up function for clearing the temporary points
+                delTempPoint()
+                {
+                    for(let i = 0; i < 6; i++)
+                        this.positions.pop();
+                }
+
+                render(program)
+                {
+                    // First call the helper function
+                    this.setupRender(program);
+
+                    // default to line loop and only draw fill when finished and only if true
+                    var primitiveType = gl.LINE_LOOP;
+					var offset = 0;
+					if(this.isFinished)
+					{
+                        // Check to see if ifFill is true, if so draw a filled shape
+                        var primitiveType = (this.isFill) ? gl.TRIANGLES : gl.LINE_LOOP;
+						// Only render triangles if the shape is completed!
+						//primitiveType = gl.TRIANGLES;
+						gl.drawArrays(primitiveType, offset, this.vertCount);
+					}
+					else
+					{
+						// Add a 1 to consider the temp vertex
+						gl.drawArrays(primitiveType, offset, this.vertCount+1);
+						
+					}
+                }
+            }
+
+            class Line extends Shape
+            {
+                constructor()
+                {
+                    super("Line");
+                }
+
+                addPoint(x,y)
+                {
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+					
+					// Increase the vertCount since we just drew a shape
+					this.vertCount++;
+
+                    // 2 because you only need to click twice to complete a line
+                    if(this.vertCount == 2)
+                    {
+                        this.isFinished = true;
+                    }
+                }
+
+                addTempPoint(x,y)
+                {
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+                }
+
+                delTempPoint()
+                {
+                    // Just like triangle. Only delete one vertex
+                    for(let i = 0; i < 6; i++)
+                        this.positions.pop();
+                }
+
+                render(program)
+                {
+                    this.setupRender(program);
+
+                    // default to line loop since we are drawing a line!
+                    var primitiveType = gl.LINE_LOOP;
+					var offset = 0;
+					if(this.isFinished)
+					{
+						// Notice how we dont check the fill status since we cant draw a filled line!
+						gl.drawArrays(primitiveType, offset, this.vertCount);
+					}
+					else
+					{
+						// Add a 1 to consider the temp vertex
+						gl.drawArrays(primitiveType, offset, this.vertCount+1);
+						
+					}
+                }
+            }
+
+            class Rectangle extends Shape
+            {
+                constructor(x,y)
+                {
+                    // First call parent constructor to initialize the parent
+                    // defined variables
+                    super("Rectangle");
+
+                    // Represent the location of the first click we store these so that
+                    // we can calculate the 'ghost' points generated by the second click
+                    this.fX = x;
+                    this.fY = y;
+                }
+
+                addPoint(x,y)
+                {
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+					
+					// Increase the vertCount since we just drew a shape
+					this.vertCount++;
+
+                    // 2 because you only need to click twice to complete a rectangle
+                    if(this.vertCount == 2)
+                    {
+                        // Need to clear the second point first so that we can add the points
+                        // including the second click in the correct order
+                        for(let i = 0; i < 6; i++)
+                        {
+                            this.positions.pop()
+                        }
+                        // Now add the points in the correct order. This will ensure that 
+                        // we will render the rectangle in the correct order
+                        this.positions.push(x, this.fY, 0, this.r, this.g, this.b);
+                        this.positions.push(x, y, 0, this.r, this.g, this.b);
+                        this.positions.push(this.fX, y, 0, this.r, this.g, this.b);
+                        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+					    // load the points from positions over to the buffer
+					    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+                        this.isFinished = true;
+                    }
+
+                }
+
+                addTempPoint(x,y)
+                {
+                    // Add the cursor and two ghost points as temp points
+                    this.positions.push(x, this.fY, 0, this.r, this.g, this.b);
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+                    this.positions.push(this.fX, y, 0, this.r, this.g, this.b);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+				    // load the points from positions over to the buffer
+				    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+                }
+
+                delTempPoint()
+                {
+                    // Need to delete 3 verticies
+                    // (6*3 = 18)
+                    for(let i = 0; i < 18; i++)
+                        this.positions.pop();
+                }
+
+                render(program)
+                {
+                    this.setupRender(program);
+
+                    // default to line loop since we are drawing a line!
+                    var primitiveType = gl.LINE_LOOP;
+					var offset = 0;
+					if(this.isFinished)
+					{
+                        var primitiveType = (this.isFill) ? gl.TRIANGLE_FAN : gl.LINE_LOOP;
+						gl.drawArrays(primitiveType, offset, this.vertCount+2);
+					}
+					else
+					{
+						// Add a 3 to consider the temp vertex
+						gl.drawArrays(primitiveType, offset, this.vertCount+3);
+						
+					}
+                }
+            }
+
+            class Circle extends Shape
+            {
+                constructor(x,y,segments)
+                {
+                    super("Circle");
+
+                    // Not only save the first click location but also record
+                    // the amount of segments that form the circle. The more
+                    // more segments the smoother the circle
+                    this.fX = x;
+                    this.fY = y;
+                    this.segments = segments;
+                    this.radius;    // Radius will change over time based on the cursor drag
+                }
+
+                formCircle()
+                {
+                    // Want this.segments evenly placed points around the circle
+                    const angleIncrement = (2 * Math.PI) / this.segments;
+
+                    // Math to evenly draw n-segments around the circle
+                    for (let i = 0; i < this.segments; i++) 
+                    {
+                        const angle = i * angleIncrement;
+                        // Make sure to add the origin of the circle so that it can offset
+                        // from the center to the real origin
+                        const x = (this.radius * Math.cos(angle)) + this.fX;
+                        const y = (this.radius * Math.sin(angle)) + this.fY;
+                        this.positions.push(x, y, 0, this.r, this.g, this.b);  // Store each point's x and y
+                    }
+                    // Know that the second click is also included in the circle whe calling formCircle
+                }
+
+                addPoint(x,y)
+                {
+                    //this.positions.push(x, y, 0, this.r, this.g, this.b);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+					
+					// Increase the vertCount since we just drew a shape
+					this.vertCount++;
+
+                    if(this.vertCount == 2)
+                    {
+                        // Empty out both verticies to only add the second click
+                        this.positions = [];
+
+                        var dx = x - this.fX;
+                        var dy = y - this.fY;
+
+                        this.radius = Math.sqrt(dx * dx + dy * dy);
+                        // Now add the rest of the points around the circle
+                        this.formCircle();
+
+                        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+                        // load the points from positions over to the buffer
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+
+
+                        this.isFinished = true;
+                    }
+                }
+
+                addTempPoint(x,y)
+                {
+                    //this.positions.push(x, y, 0, this.r, this.g, this.b);
+                    //this.positions = [];
+                    var dx = x - this.fX;
+                    var dy = y - this.fY;
+
+                    // Distance formula to get the radius
+                    this.radius = Math.sqrt(dx * dx + dy * dy);
+                    this.formCircle();
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+
+                }
+
+                delTempPoint()
+                {
+                    // Instead of popping all temp verticies, simply just reassign the
+                    // positions array to just contain the first click and let the garbage 
+                    // collector do the rest
+                    this.positions = [];
+                    this.positions.push(this.fX, this.fY, 0, this.r, this.g, this.b);
+                    
+                }
+
+                render(program)
+                {
+                    this.setupRender(program);
+
+                    // default to line loop since we are drawing a line!
+                    var primitiveType = gl.LINES;
+					var offset = 0;
+					if(this.isFinished)
+					{
+                        var primitiveType = (this.isFill) ? gl.TRIANGLE_FAN : gl.LINE_LOOP;
+						gl.drawArrays(primitiveType, offset, this.vertCount+(this.segments-2));
+					}
+					else
+					{
+						// # of verticies = first click/origin + this.segments-1
+						gl.drawArrays(primitiveType, offset, this.vertCount+(this.segments-1));
+						//console.log(this.positions.length);
+					}
+
+                }
+            }
+
+            class Npolygon extends Shape
+            {
+                constructor()
+                {
+                    super("N-Polygon");
+                    this.isRightClick = false;
+                }
+
+                addPoint(x,y)
+                {
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+					
+					// Increase the vertCount since we just drew a shape. No need to check isFinished
+                    // since we will only stop once we right click
+					this.vertCount++;
+                }
+
+                addTempPoint(x,y)
+                {
+                    this.positions.push(x, y, 0, this.r, this.g, this.b);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+					// load the points from positions over to the buffer
+					gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.positions), gl.STATIC_DRAW);
+
+                }
+
+                delTempPoint()
+                {
+                    for(let i = 0; i < 6; i++)
+                    {
+                        this.positions.pop();
+                    }
+                }
+
+                render(program)
+                {
+                    this.setupRender(program);
+
+                    if(this.isRightClick == true)
+                        this.isFinished = true;
+
+                    // default to line loop since we are drawing a line!
+                    var primitiveType = gl.LINE_LOOP;
+					var offset = 0;
+					if(this.isFinished)
+					{
+                        var primitiveType = (this.isFill) ? gl.TRIANGLE_FAN : gl.LINE_LOOP;
+						gl.drawArrays(primitiveType, offset, this.vertCount);
+					}
+					else
+					{
+						// Add a 1 to consider the temp vertex
+						gl.drawArrays(primitiveType, offset, this.vertCount+1);
+						
+					}
+
+                }
+            }
+        </script>
+
+        <script>
+            class Main
+            {
+                constructor()
+                {
+                    // Completed program and grab a its program variable
+                    this.myWebGL = new WebGL_Interface();
+                    this.program = this.myWebGL.program;
+                    this.myShapes = [];
+                    
+                    // current variables. In the case that
+                    // the user doesnt click when onload
+                    // reflect the default values from Shape as well
+                    this.currentShape = "Triangle";
+                    this.cR = 1;
+                    this.cG = 0;
+                    this.cB = 0;
+                    this.cFill = true;
+
+                }
+
+                getCoordinates(event)
+                {
+                    var rect = canvas.getBoundingClientRect();
+
+				    // clientX and Y combine to form the mouse position
+				    // relative to the 0,0 at the very top left of the page
+				    // aka the browser window. 
+				    var realX = event.clientX - rect.left;
+				    var realY = event.clientY - rect.top;
+
+				    // These coordinates are still in pixel form and we need to convert
+				    // them over to clipspace
+				    //console.log(realX+","+realY);
+				    var x = -1 + 2 * realX / myCanvas.width;
+				    var y = -1 + 2 * (myCanvas.height - realY) / myCanvas.height;
+				    //console.log("The click occurred on "+x+","+y);
+
+                    return [x, y];
+                }
+
+                canvasLClick(event)
+                {
+                    // Get coordinated of the left click within the canvas
+                    var coords = this.getCoordinates(event);
+                    var [x,y] = coords;
+
+                    // Only create a new shape if the myShapes list is empty or the last shape
+                    // in the list is fully finished
+                    if(this.myShapes.length == 0 || this.myShapes[this.myShapes.length-1].isFinished)
+                    {
+                        // Use current shape to decide what type the new shape will be
+                        switch(this.currentShape)
+                        {
+                            case "Triangle":
+                                var temp = new Triangle();
+                                break;
+                            case "Line":
+                                var temp = new Line();
+                                break;
+                            case "Rectangle":
+                                var temp = new Rectangle(x,y);
+                                break;
+                            case "Circle":
+                                var temp = new Circle(x,y,100);
+                                break;
+                            case "N-Polygon":
+                                var temp = new Npolygon();
+                                break;
+
+                        }
+
+                        // After creating the new shape assign its color values, add its
+                        // first point since a new shape is created by left clicking and push
+                        // onto the myShapes list
+                        temp.r = this.cR;
+                        temp.g = this.cG;
+                        temp.b = this.cB;
+                        temp.isFill = this.cFill;
+
+                        temp.addPoint(x,y);
+                        this.myShapes.push(temp);
+                    }
+                    else
+				    {   // If last shape not finished drawing, point to last shape
+                        // Each shape will have its own unique addPoint(), addTempPoint(),
+                        // and render() that is tailored to the shape 
+				    	this.myShapes[this.myShapes.length-1].addPoint(x,y);
+				    }
+
+                    // want to render the shape as soon as it is done
+                    if(this.myShapes[this.myShapes.length-1].isFinished)
+					    this.renderAll();
+
+                }
+
+                canvasRClick(event)
+                {
+                    // This event only applies to the N-Polygon shape. The idea is to keep
+                    // adding permanent points onto the shape until we right click in the canvas
+                    // The shape will then be considered complete (isFinished == true)
+                    if(this.myShapes != 0 && this.myShapes[this.myShapes.length-1].name == "N-Polygon")
+                    {
+                        this.myShapes[this.myShapes.length-1].isRightClick = true;
+                        this.renderAll();
+                    }
+                }
+
+                renderAll()
+                {
+                    // Iterate through every shape and call its render function
+				    for(let i = 0; i < this.myShapes.length; i++)
+                    {
+				    	// make sure to pass the program as a parameter
+				    	this.myShapes[i].render(this.program);
+				    }
+				    console.log("myShapes length: " + this.myShapes.length);
+                }
+
+                canvasMove(event)
+                {
+                    // Only track the cursor when there exist a shape that is not yet finished
+                    if(this.myShapes.length != 0 && !this.myShapes[this.myShapes.length-1].isFinished)
+                    {
+                        // Grab the current coordinates of the cursor
+                        var coords = this.getCoordinates(event);
+                        var [x,y] = coords;
+
+                        // As we move the cursor, go through the render cycle:  Clear -> Update -> Render
+                        // Idea is to add the point(s) as temporary points by adding and then removing
+                        // within the same cycle. This way the illusion of part of the shape moving 
+                        // with the cursor is created
+                        gl.clearColor(1,1,1,1); 
+					    gl.clear(gl.COLOR_BUFFER_BIT);
+					    this.myShapes[this.myShapes.length-1].addTempPoint(x,y);
+					    this.renderAll();
+					    
+                        // Now delete temporary points
+                        this.myShapes[this.myShapes.length-1].delTempPoint();
+                    }
+                }
+
+                shapeHandler(menu)
+                {
+                    // change the current shape based on the selected option
+                    // from the shape menu
+                    console.log("Shape selected: " + menu.value);
+                    this.currentShape = menu.value;
+                }
+
+                colorHandler(menu)
+                {
+
+                    // Take the value passed from the color menu and convert it
+                    // over to type number from string
+                    console.log("Color Selected: " + menu.options[menu.selectedIndex].innerHTML);
+                    var stringRbg = menu.value;
+                    var rbgArray = stringRbg.split(',').map(num => Number(num));
+
+                    // after conversion pass each rgb value to the respective 
+                    // variable 
+                    this.cR = rbgArray[0];
+                    this.cG = rbgArray[1];
+                    this.cB = rbgArray[2];
+                    
+                }
+
+                fillHandler(button)
+                {
+                    // Functionality for making the Filled button
+                    // toggle between Filled and not filled 
+                    // which will alter cFill appropriately
+                    if(button.innerHTML == "Filled")
+                    {
+                        this.cFill = false;
+                        button.innerHTML = "Not Filled";
+                    }
+                    else
+                    {
+                        this.cFill = true;
+                        button.innerHTML = "Filled";
+                    }
+                }
+
+                clearHandler()
+                {
+                    // Clear the myShapes array by just assigning it an empty array
+				    // then clear the screen and send an output log
+				    this.myShapes = [];
+				    gl.clearColor(1,1,1,1); 
+				    gl.clear(gl.COLOR_BUFFER_BIT);
+				    console.log("Canvas cleared!");
+
+                }
+
+                // Static functions used as callbacks for the event listeners. The idea
+                // is to have them pass the event object/reference over to the event handlers
+                // which are defined above. Note that some pass event while others pass this
+                static mouseLC(event)
+                {
+                    m.canvasLClick(event);
+                }
+
+                static mouseRC(event)
+                {
+                    m.canvasRClick(event)
+                }
+
+                static mouseM(event)
+                {
+                    m.canvasMove(event);
+                }
+
+                static shapeH()
+                {
+                    m.shapeHandler(this);
+                }
+
+                static colorH()
+                {
+                    m.colorHandler(this);
+                }
+
+                static fillH()
+                {
+                    m.fillHandler(this);
+                }
+
+                static clearH()
+                {
+                   m.clearHandler()
+                }
+            }
+        
+            
+        </script>
+    </head>
+    <body>
+        <h1 style="color:blueviolet">Paint!</h1>
+
+        <canvas id="myCanvas" width="640" height="640" style = "border: 1px solid #000;">
+            Browser does not support canvas
+        </canvas>
+
+        <div>
+            <!--Shape menu-->
+            <select name="shapes" id="shape" size="5">
+                <option value="Triangle">Triangle</option>
+                <option value="Line">Line</option>
+                <option value="Rectangle">Rectangle</option>
+                <option value="Circle">Circle</option>
+                <option value="N-Polygon">N-Polygon</option>
+            </select>
+
+            <!--Color menu-->
+            <select name="colors" id="color" size="5">
+                <option value="1,0,0">Red</option>
+                <option value="0,0,1">Blue</option>
+                <option value="0,1,0">Green</option>
+                <option value="1,0.647,0">Orange</option>
+                <option value="0.5,0,0.5">Purple</option>
+            </select>
+
+            <!--Buttons for fill and clear canvas-->
+            <button id="fill">Filled</button>
+
+            <button id="clear">Clear Canvas</button>
+        </div>
+
+
+        <script>
+            // Initialize canvas and gl context
+            var canvas = document.getElementById("myCanvas");
+            var gl = canvas.getContext("webgl");
+
+            // Main driver instance
+            var m = new Main();
+
+            // Define event listeners for left click, right click, and mouse tracking
+            // inside of the canvas only
+            canvas.addEventListener("click",Main.mouseLC);
+            canvas.addEventListener("contextmenu",Main.mouseRC)
+            canvas.addEventListener("mousemove",Main.mouseM);
+
+            // Event listener for the shape menu
+            var myShape = document.getElementById("shape");
+            myShape.addEventListener("click",Main.shapeH);
+
+            // Event listener for the color menu
+            var myColor = document.getElementById("color");
+            myColor.addEventListener("click",Main.colorH);
+
+            // Event listener for the fill status button
+            var myFill = document.getElementById("fill");
+            myFill.addEventListener("click",Main.fillH);
+
+            // Event listener for the clear canvas button
+            var myClear = document.getElementById("clear");
+            myClear.addEventListener("click",Main.clearH);
+
+            // Make the menus default to the first choices when first
+            // loading the page
+            window.onload = function() {
+                // Triangle 
+                myShape.selectedIndex = 0;
+                // Red
+                myColor.selectedIndex = 0;
+            };
+
+        </script>
+    </body>
+
+</html>
