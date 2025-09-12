@@ -405,7 +405,7 @@
 				constructor()
 				{
 					// Need to specify the verticie count through the constructor (this could be changed)
-					super(6, 5.0);
+					super(6, 200.0);
 					this.name = "Bullet";
 					// Bullet is a trigger object
 					this.isTrigger = true;
@@ -478,7 +478,7 @@
 			{
 				constructor()
 				{
-					super(6, 4.0);
+					super(6, 120.0, 100.0);
 					this.name = "Player";
 					this.buffer=gl.createBuffer();
 					// Creating our buffer for the shape. Know that all unique instances will
@@ -652,7 +652,7 @@
 			{
 				constructor()
 				{
-					super(24, 1.0, 5.0);
+					super(24, 1.0, 150.0);
 					this.name = "Coin";
 					this.isTrigger = true;
 					this.buffer = gl.createBuffer();
