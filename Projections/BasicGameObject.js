@@ -52,14 +52,16 @@ class Transform
 
 class GameObject
 {
-	constructor() 
+	constructor(speed=1.0, angSpeed=1.0) 
 	{
 		this.loc = [0,0,0];
 		this.rot = [0,0,0];
 		this.isTrigger = false;
 		this.collissionRadius = 1.0;
 		this.velocity = [0,0,0];
+		this.speed = speed;
 		this.angVelocity = [0,0,0];
+		this.angSpeed = angSpeed;
 		this.name = "default";
 		this.id = 0;
 		this.prefab;
@@ -72,8 +74,8 @@ class GameObject
 		for(var i =0; i< 3;i ++)
 		{
 			tempP[i] = this.loc[i];
-			tempP[i] += this.velocity[i];
-			this.rot[i] += this.angVelocity[i];
+			tempP[i] += this.velocity[i] * this.speed * window.dt;
+			this.rot[i] += this.angVelocity[i] * this.angSpeed * window.dt;
 		}
 		if(!this.isTrigger)
 		{
@@ -202,45 +204,13 @@ class Player extends GameObject
 }
 
 
-class Demo extends GameObject
-{
-	constructor()
-	{
-		super();
-
-
-	}
-	
-	Update()
-	{
-		this.velocity = [0,0,0];
-		if("A" in m.Keys && m.Keys["A"])
-		{
-			this.velocity[0] = -1;
-		}
-		if("W" in m.Keys && m.Keys["W"])
-		{
-			this.velocity[1] = 1;
-		}
-		//D 
-		//S 
-		console.log("THE VELOCITY IS "+this.velocity);
-		
-	}
-
-	Render(program)
-	{
-	//This is how I draw demo!	
-	}
-	
-}
 
 // Added child status 
 class Triangle1 extends GameObject
  {
 	 constructor()
 	 {
-		super();
+		super(150.0,150.0);
 		 this.buffer=gl.createBuffer();
 		 gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
 		 //Now we want to add color to our vertices information.
@@ -328,7 +298,7 @@ class Camera extends GameObject
 {
 	constructor()
 	{
-		super();
+		super(120.0,120.0);
 		// No need to model the camera itself only the object that we will see
 
 		this.loc = [0,0,0];
@@ -376,5 +346,8 @@ class Camera extends GameObject
 		// camLoc and worldRot here so that the camera can move.
 	}
 
-	// No need to render since the camera has no verticies!
+	Render()
+	{
+		// No need to render since the camera has no verticies!
+	}
 }
